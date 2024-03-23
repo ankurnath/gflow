@@ -1,8 +1,8 @@
 defaults:
   - override hydra/launcher: submitit_slurm
 
-task: mis
-input: rb200-300
+task: mcut
+input: rnd_graph_800vertices_unweighted
 wandb: 0
 d: 0  # -1 for cpu
 seed: 0
@@ -44,6 +44,8 @@ anneal: linear  # none, linear
 annend: 40000
 rexp: 5e2 # reward_exp
 rexpit: 1
+
+back_trajectory: False
 
 
 hydra:

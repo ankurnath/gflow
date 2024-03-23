@@ -281,9 +281,12 @@ class MaxCutMDP(GraphCombOptMDP):
         state[state == 2] = 0 # "0" for "not in the set"
         with self.gbatch.local_scope():
             self.gbatch.ndata["h"] = state.float()
+            # print(self.gbatch.edata)
             self.gbatch.apply_edges(fn.u_add_v("h", "h", "e"))
             # 0 + 0 = 0 (not cut), 0 + 1 = 1 (cut), 1 + 1 = 2 (not cut)
             self.gbatch.edata["e"] = (self.gbatch.edata["e"] == 1).float()
+            # Multiply edge features by edge weights
+            self.gbatch.apply_edges(lambda edges: {'e': edges.data['e'] * edges.data['weight']})
             cut = dgl.sum_edges(self.gbatch, 'e') # (bs, )
         cut = cut / 2 # each edge is counted twice
         return cut
