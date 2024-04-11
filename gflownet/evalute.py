@@ -11,9 +11,10 @@ import torch
 import dgl
 from einops import rearrange, reduce, repeat
 
-from data import get_data_loaders
+from data import get_data_loaders,get_test_data_loader
 from util import seed_torch, TransitionBuffer, get_mdp_class
 from algorithm import DetailedBalanceTransitionBuffer
+import pandas as pd
 
 torch.backends.cudnn.benchmark = True
 
@@ -148,31 +149,35 @@ def main(cfg: DictConfig):
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
 
-    _, test_loader = get_data_loaders(cfg)
-    # trainset_size = len(train_loader.dataset)
-    # print(f"Trainset size: {trainset_size}")
+    
+
+    test_loader = get_test_data_loader(cfg)
+    testset_size = len(test_loader.dataset)
+    print(f"Testset size: {testset_size}")
     # alg_save_path = os.path.abspath(f"{cfg.input}/alg.pt")
     # alg_save_path_best = os.path.abspath(f"{cfg.input}/alg_best.pt")
     load_path=os.path.join('pretrained_agents',cfg.input)
     alg_load_path_best=os.path.join(load_path,"alg_best.pt")
     alg.load(alg_load_path_best)
-    cfg.same_graph_across_batch=True
+    # cfg.sameg=True
     # os.makedirs(save_path,exist_ok = True)
     # train_data_used = 0
     # train_step = 0
     # train_logr_scaled_ls = []
     # train_metric_ls = []
     # metric_best = 0.
-    result = {"cut": [] }
-
+    
+    
     @torch.no_grad()
     def evaluate():
         torch.cuda.empty_cache()
-        num_repeat = 20
-        mis_ls, mis_top20_ls = [], []
-        # logr_ls = []
+        num_repeat = 50
+        mis_ls, mis_top50_ls = [], []
+        # best_cut=[]
+        result = {}
+
         pbar = tqdm(enumerate(test_loader))
-        # pbar.set_description(f"Test Epoch {ep:2d} Data used {train_data_used:5d}")
+        
         for batch_idx, gbatch in pbar:
             print('Batch idx',batch_idx)
             gbatch = gbatch.to(device)
@@ -188,82 +193,38 @@ def main(cfg: DictConfig):
             # logr_ls += logr_rep.tolist()
             curr_mis_rep = torch.tensor(env.batch_metric(state))
             curr_mis_rep = rearrange(curr_mis_rep, "(rep b) -> b rep", rep=num_repeat).float()
-            # print(curr_mis_rep.shape)
-            # mis_ls += curr_mis_rep.mean(dim=1).tolist()
-            mis_top20_ls += curr_mis_rep.max(dim=1)[0].tolist()
-            # pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
+        #     print(curr_mis_rep.shape)
+            mis_ls += curr_mis_rep.mean(dim=1).tolist()
+            mis_top50_ls += curr_mis_rep.max(dim=1)[0].tolist()
 
-        # print(
-        #       f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
-        #       f"top20={np.mean(mis_top20_ls):.2f}, "
-        #       )
+        #     pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
 
-        result["cut"] = mis_top20_ls
-        # result["logr_scaled"][ep] = np.mean(logr_ls)
-        # result["train_step"][ep] = train_step
-        # result["train_data_used"][ep] = train_data_used
+        print(
+              f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
+              f"top50={np.mean(mis_top50_ls):.2f}, "
+              )
+
+        result["cut"] = mis_top50_ls
         print(result)
-        pickle.dump(result, gzip.open("./result.json", 'wb'))
+        result=pd.DataFrame(result)
+        data_folder=f'pretrained_agents/{cfg.input}/data'
+        os.makedirs(data_folder,exist_ok=True)
+        result.to_pickle(os.path.join(data_folder,'results'))
 
-    # for ep in range(cfg.epochs):
-    #     for batch_idx, gbatch in enumerate(train_loader):
-    #         reward_exp = None
-    #         process_ratio = max(0., min(1., train_data_used / cfg.annend))
-    #         logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
+        # pickle.dump(result, gzip.open("./result.json", 'wb'))
 
-    #         train_logr_scaled_ls = train_logr_scaled_ls[-5000:]
-    #         train_metric_ls = train_metric_ls[-5000:]
-    #         gbatch = gbatch.to(device)
-    #         if cfg.same_graph_across_batch:
-    #             gbatch = dgl.batch([gbatch] * cfg.batch_size_interact)
-    #         train_data_used += gbatch.batch_size
-
-    #         ###### rollout
-    #         batch, metric_ls = rollout(gbatch, cfg, alg)
-    #         buffer.add_batch(batch)
-
-    #         logr = logr_scaler(batch[-2][:, -1])
-    #         train_logr_scaled_ls += logr.tolist()
-    #         train_logr_scaled = logr.mean().item()
-    #         train_metric_ls += metric_ls
-    #         train_traj_len = batch[-1].float().mean().item()
-
-    #         ##### train
-    #         batch_size = min(len(buffer), cfg.batch_size)
-    #         indices = list(range(len(buffer)))
-    #         for _ in range(cfg.tstep):
-    #             if len(indices) == 0:
-    #                 break
-    #             curr_indices = random.sample(indices, min(len(indices), batch_size))
-    #             batch = buffer.sample_from_indices(curr_indices)
-    #             train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
-    #             indices = [i for i in indices if i not in curr_indices]
-
-    #         if cfg.onpolicy:
-    #             buffer.reset()
-
-    #         if train_step % cfg.print_freq == 0:
-    #             print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-    #                   + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
-    #                   + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
-    #                   + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
-
-    #         train_step += 1
-
-    #         ##### eval
-    #         if batch_idx == 0 or train_step % cfg.eval_freq == 0:
-    #             # alg.save(alg_save_path)
-    #             metric_curr = np.mean(train_metric_ls[-1000:])
-    #             if metric_curr > metric_best:
-    #                 metric_best = metric_curr
-    #                 print(f"best metric: {metric_best:.2f} at step {train_data_used:.3e}")
-    #                 alg.save(alg_save_path_best)
-    #             if cfg.eval:
-    #                 evaluate(ep, train_step, train_data_used, logr_scaler)
-
+    
     evaluate()
     # alg.save(alg_save_path)
 
 
 if __name__ == "__main__":
+    num_nodes = 5
+    src = torch.tensor([0, 1, 1, 2, 3])
+    dst = torch.tensor([1, 2, 3, 4, 0])
+    graph = dgl.graph((src, dst), num_nodes=num_nodes)
+
+    # Send the graph to a device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    graph = graph.to(device)
     main()

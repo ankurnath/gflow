@@ -68,7 +68,7 @@ class GIN(nn.Module):
         # list of hidden representation at each layer
         hidden_rep = [h]
         for i, layer in enumerate(self.ginlayers):
-            h = layer(g, h)
+            h = layer(g, h,g.edata['weight'])
             h = self.batch_norms[i](h)
             h = F.relu(h)
             hidden_rep.append(h)

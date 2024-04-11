@@ -17,10 +17,10 @@ def read_dgl_from_graph(graph_path):
     _g=_g.to_directed()
     # _g = nx.read_gpickle(graph_path)
     labelled = "optimal" in graph_path.name or "non-optimal" in graph_path.name
-    if labelled:
-        g = dgl.from_networkx(_g, node_attrs=['label'])
-    else:
-        g = dgl.from_networkx(_g, edge_attrs=['weight'])
+    # if labelled:
+    #     g = dgl.from_networkx(_g, node_attrs=['label'])
+    # else:
+    g = dgl.from_networkx(_g, edge_attrs=['weight'])
     return g
 
 class GraphDataset(Dataset):
@@ -95,6 +95,18 @@ from tqdm import tqdm
 def collate_fn(graphs):
     return dgl.batch(graphs)
 
+
+def get_test_data_loader(cfg):
+    data_path = Path(__file__).parent.parent.parent / "data"
+    test_data_path = data_path / "testing" / (cfg.input)
+    print(f"Loading data from {test_data_path}.")
+    testset = GraphDataset(test_data_path)
+    test_loader = DataLoader(testset, batch_size=cfg.test_batch_size,
+             shuffle=False, collate_fn=collate_fn, num_workers=cfg.num_workers, pin_memory=True)
+    return test_loader
+
+
+
 def get_data_loaders(cfg):
     data_path = Path(__file__).parent.parent.parent / "data"
     # data_path = data_path / pathlib.Path(cfg.input)  # string to pathlib.Path
@@ -111,6 +123,7 @@ def get_data_loaders(cfg):
 
     trainset = GraphDataset(train_data_path)
     testset = GraphDataset(test_data_path)
+    print(len(testset))
     
 
     # collate_fn = lambda graphs: dgl.batch(graphs)

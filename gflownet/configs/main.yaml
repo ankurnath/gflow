@@ -2,7 +2,11 @@ defaults:
   - override hydra/launcher: submitit_slurm
 
 task: mcut
-input: rnd_graph_800vertices_unweighted
+# input: ER_200
+# input: BA_200
+# input: rnd_graph_800vertices_weighted
+# input: planar_800vertices_weighted
+# input: toroidal_grid_2D_800vertices_weighted
 wandb: 0
 d: 0  # -1 for cpu
 seed: 0

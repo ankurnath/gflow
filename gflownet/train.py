@@ -15,6 +15,8 @@ from data import get_data_loaders
 from util import seed_torch, TransitionBuffer, get_mdp_class
 from algorithm import DetailedBalanceTransitionBuffer
 
+import argparse
+
 torch.backends.cudnn.benchmark = True
 
 
@@ -141,6 +143,7 @@ def rollout(gbatch, cfg, alg):
 @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
 def main(cfg: DictConfig):
     cfg = refine_cfg(cfg)
+    # overwrite
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
     alg, buffer = get_alg_buffer(cfg, device)
@@ -262,4 +265,14 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    # Create a simple graph
+    num_nodes = 5
+    src = torch.tensor([0, 1, 1, 2, 3])
+    dst = torch.tensor([1, 2, 3, 4, 0])
+    graph = dgl.graph((src, dst), num_nodes=num_nodes)
+
+    # Send the graph to a device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    graph = graph.to(device)
+    
     main()
