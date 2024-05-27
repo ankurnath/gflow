@@ -1,4 +1,4 @@
-name: gflow
+git name: gflow
 channels:
   - pytorch
   - nvidia

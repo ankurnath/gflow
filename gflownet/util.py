@@ -262,11 +262,13 @@ class MaxCutMDP(GraphCombOptMDP):
         # it must NOT be in the set, thus label it to be "0"
         with self.gbatch.local_scope():
             self.gbatch.ndata["h"] = (state == 1).float()
-            self.gbatch.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+            # self.gbatch.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+            self.gbatch.update_all(fn.u_mul_e("h","weight","m"), fn.sum("m", "h"))
             x1_deg = self.gbatch.ndata.pop('h').int()
         with self.gbatch.local_scope():
             self.gbatch.ndata["h"] = ((state == 0) | (state == 2)).float()
-            self.gbatch.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+            # self.gbatch.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+            self.gbatch.update_all(fn.u_mul_e("h","weight","m"), fn.sum("m", "h"))
             x02_deg = self.gbatch.ndata.pop('h').int()
         state[undecided & (x1_deg > x02_deg)] = 0
         self._state = state
@@ -274,6 +276,8 @@ class MaxCutMDP(GraphCombOptMDP):
         decided_tensor = pad_batch(self.get_decided_mask(state), self.numnode_per_graph, padding_value=True)
         self.done = torch.all(decided_tensor, dim=1)
         return state
+
+   
 
     def get_log_reward(self, state=None): # calculate the cut
         if state is None:

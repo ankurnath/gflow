@@ -15,7 +15,6 @@ from data import get_data_loaders,get_test_data_loader
 from util import seed_torch, TransitionBuffer, get_mdp_class
 from algorithm import DetailedBalanceTransitionBuffer
 import pandas as pd
-from collections import defaultdict
 
 torch.backends.cudnn.benchmark = True
 
@@ -140,7 +139,7 @@ def rollout(gbatch, cfg, alg):
 
 
 # @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
-@hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
+@hydra.main(version_base=None, config_path="configs", config_name="main_mds") # for newer hydra
 def main(cfg: DictConfig):
     cfg = refine_cfg(cfg)
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
@@ -157,7 +156,7 @@ def main(cfg: DictConfig):
     print(f"Testset size: {testset_size}")
     # alg_save_path = os.path.abspath(f"{cfg.input}/alg.pt")
     # alg_save_path_best = os.path.abspath(f"{cfg.input}/alg_best.pt")
-    load_path=os.path.join('pretrained_agents',cfg.input)
+    load_path=os.path.join('pretrained_agents_mds',cfg.input)
     alg_load_path_best=os.path.join(load_path,"alg_best.pt")
     alg.load(alg_load_path_best)
     # cfg.sameg=True
@@ -175,8 +174,7 @@ def main(cfg: DictConfig):
         num_repeat = 50
         mis_ls, mis_top50_ls = [], []
         # best_cut=[]
-        # result = {}
-        result = defaultdict (list)
+        result = {}
 
         pbar = tqdm(enumerate(test_loader))
         
@@ -187,46 +185,17 @@ def main(cfg: DictConfig):
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
             state = env.state
-            # step=0
-            rewards=env.get_log_reward()
             while not all(env.done):
                 action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                # print(type(action))
-                # print(action.shape)
-                # print(action)
                 state = env.step(action)
-                # action=action.reshape(-1,num_repeat)
-                # print(action)
-                # print(state)
-                # print(env.batch_metric(state))
-                if torch.all(rewards<=env.get_log_reward()):
-                    rewards=env.get_log_reward()
-                else:
-                    raise ValueError ("No reward")
-                # print(env.get_log_reward())
-                # step+=1
-            
-            # print (torch.sum(state)) 
-            # print('Step',step)
 
             # logr_rep = logr_scaler(env.get_log_reward())
             # logr_ls += logr_rep.tolist()
-            # print(state.mean())
-            
             curr_mis_rep = torch.tensor(env.batch_metric(state))
-            # print(curr_mis_rep.shape)
             curr_mis_rep = rearrange(curr_mis_rep, "(rep b) -> b rep", rep=num_repeat).float()
-            # print(curr_mis_rep.shape)
+        #     print(curr_mis_rep.shape)
             mis_ls += curr_mis_rep.mean(dim=1).tolist()
             mis_top50_ls += curr_mis_rep.max(dim=1)[0].tolist()
-            # best_runs= torch.argmax (curr_mis_rep,dim=1)
-            # state=state.reshape(125,-1,10)
-            # for i in range(10):
-            #     each_graph_state=state[:,i]
-
-            # print(state.shape)
-            # best_run=torch.argmax(curr_mis_rep,dim=1)
-            # print(best_run)
 
         #     pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
 
@@ -234,26 +203,11 @@ def main(cfg: DictConfig):
               f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
               f"top50={np.mean(mis_top50_ls):.2f}, "
               )
-        # print(state.shape)
-        # state=state.reshape(10,125).tolist()
-
-        # state=state.tolist()
-        # graph_no,num_repeat,num_spin
-        # state=state.reshape(10,50,125)
-        # for i in range()
-
-        
 
         result["cut"] = mis_top50_ls
-        # for i in range(10):
-        #     result['state'].append(state[i])
-
-        # for j,best_run in enumerate(best_runs):
-        #     result['state'].append(state[j][best_run][:].tolist())
-        # print(result)
+        print(result)
         result=pd.DataFrame(result)
-        # print(result)
-        data_folder=f'pretrained_agents/{cfg.input}/data'
+        data_folder=f'pretrained_agents_mds/{cfg.input}/data'
         os.makedirs(data_folder,exist_ok=True)
         result.to_pickle(os.path.join(data_folder,'results'))
 

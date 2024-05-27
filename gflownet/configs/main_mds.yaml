@@ -1,16 +1,15 @@
 defaults:
   - override hydra/launcher: submitit_slurm
 
-task: mcut
-# input: dense_MC_100_200vertices_unweighted
+task: mds
 # input: ER_200
 # input: BA_200
 # input: rnd_graph_800vertices_weighted
-input: planar_800vertices_weighted
+# input: planar_800vertices_weighted
 # input: toroidal_grid_2D_800vertices_weighted
 # input: Physics
-# input: SK_spin_70_100vertices_weighted
-# input : wishart_100vertices_m50
+# input: BA_200-300
+input : BA_800-1200
 wandb: 0
 d: 0  # -1 for cpu
 seed: 0
@@ -70,5 +69,5 @@ hydra:
     mem_gb: 32
     nodes: 1
     gpus_per_node: 1
-    cpus_per_task: 10
+    cpus_per_task: 5
     tasks_per_node: 1

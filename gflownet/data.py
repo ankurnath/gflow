@@ -107,8 +107,13 @@ def get_test_data_loader(cfg):
 
 
 
-def get_data_loaders(cfg):
-    data_path = Path(__file__).parent.parent.parent / "data"
+def get_data_loaders(cfg,add_task=False):
+    if add_task:
+        folder=f'data_{cfg.task}'
+    else:
+        folder='data'
+    # data_path = Path(__file__).parent.parent.parent / "data"
+    data_path = Path(__file__).parent.parent.parent / folder
     # data_path = data_path / pathlib.Path(cfg.input)  # string to pathlib.Path
     print(f"Loading data from {data_path}.")
 

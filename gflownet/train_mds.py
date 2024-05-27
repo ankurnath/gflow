@@ -11,11 +11,11 @@ import torch
 import dgl
 from einops import rearrange, reduce, repeat
 
-from data import get_data_loaders,get_test_data_loader
+from data import get_data_loaders
 from util import seed_torch, TransitionBuffer, get_mdp_class
 from algorithm import DetailedBalanceTransitionBuffer
-import pandas as pd
-from collections import defaultdict
+
+import argparse
 
 torch.backends.cudnn.benchmark = True
 
@@ -140,9 +140,10 @@ def rollout(gbatch, cfg, alg):
 
 
 # @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
-@hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
+@hydra.main(version_base=None, config_path="configs", config_name="main_mds") # for newer hydra
 def main(cfg: DictConfig):
     cfg = refine_cfg(cfg)
+    # overwrite
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
     alg, buffer = get_alg_buffer(cfg, device)
@@ -150,121 +151,122 @@ def main(cfg: DictConfig):
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
 
-    
-
-    test_loader = get_test_data_loader(cfg)
-    testset_size = len(test_loader.dataset)
-    print(f"Testset size: {testset_size}")
+    train_loader, test_loader = get_data_loaders(cfg,add_task=True)
+    trainset_size = len(train_loader.dataset)
+    print(f"Trainset size: {trainset_size}")
     # alg_save_path = os.path.abspath(f"{cfg.input}/alg.pt")
     # alg_save_path_best = os.path.abspath(f"{cfg.input}/alg_best.pt")
-    load_path=os.path.join('pretrained_agents',cfg.input)
-    alg_load_path_best=os.path.join(load_path,"alg_best.pt")
-    alg.load(alg_load_path_best)
-    # cfg.sameg=True
-    # os.makedirs(save_path,exist_ok = True)
-    # train_data_used = 0
-    # train_step = 0
-    # train_logr_scaled_ls = []
-    # train_metric_ls = []
+    save_path=os.path.join('pretrained_agents_mds',cfg.input)
+    alg_save_path_best=os.path.join(save_path,"alg_best.pt")
+    os.makedirs(save_path,exist_ok = True)
+    train_data_used = 0
+    train_step = 0
+    train_logr_scaled_ls = []
+    train_metric_ls = []
     # metric_best = 0.
-    
-    
-    @torch.no_grad()
-    def evaluate():
-        torch.cuda.empty_cache()
-        num_repeat = 50
-        mis_ls, mis_top50_ls = [], []
-        # best_cut=[]
-        # result = {}
-        result = defaultdict (list)
+    metric_best = float('-inf')
+    result = {"set_size": {}, "logr_scaled": {}, "train_data_used": {}, "train_step": {}, }
 
+    @torch.no_grad()
+    def evaluate(ep, train_step, train_data_used, logr_scaler):
+        torch.cuda.empty_cache()
+        num_repeat = 20
+        mis_ls, mis_top20_ls = [], []
+        logr_ls = []
         pbar = tqdm(enumerate(test_loader))
-        
+        pbar.set_description(f"Test Epoch {ep:2d} Data used {train_data_used:5d}")
         for batch_idx, gbatch in pbar:
-            print('Batch idx',batch_idx)
             gbatch = gbatch.to(device)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
             state = env.state
-            # step=0
-            rewards=env.get_log_reward()
             while not all(env.done):
                 action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                # print(type(action))
-                # print(action.shape)
-                # print(action)
                 state = env.step(action)
-                # action=action.reshape(-1,num_repeat)
-                # print(action)
-                # print(state)
-                # print(env.batch_metric(state))
-                if torch.all(rewards<=env.get_log_reward()):
-                    rewards=env.get_log_reward()
-                else:
-                    raise ValueError ("No reward")
-                # print(env.get_log_reward())
-                # step+=1
-            
-            # print (torch.sum(state)) 
-            # print('Step',step)
 
-            # logr_rep = logr_scaler(env.get_log_reward())
-            # logr_ls += logr_rep.tolist()
-            # print(state.mean())
-            
+            logr_rep = logr_scaler(env.get_log_reward())
+            logr_ls += logr_rep.tolist()
             curr_mis_rep = torch.tensor(env.batch_metric(state))
-            # print(curr_mis_rep.shape)
             curr_mis_rep = rearrange(curr_mis_rep, "(rep b) -> b rep", rep=num_repeat).float()
-            # print(curr_mis_rep.shape)
             mis_ls += curr_mis_rep.mean(dim=1).tolist()
-            mis_top50_ls += curr_mis_rep.max(dim=1)[0].tolist()
-            # best_runs= torch.argmax (curr_mis_rep,dim=1)
-            # state=state.reshape(125,-1,10)
-            # for i in range(10):
-            #     each_graph_state=state[:,i]
+            mis_top20_ls += curr_mis_rep.max(dim=1)[0].tolist()
+            pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
 
-            # print(state.shape)
-            # best_run=torch.argmax(curr_mis_rep,dim=1)
-            # print(best_run)
-
-        #     pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
-
-        print(
+        print(f"Test Epoch{ep:2d} Data used{train_data_used:5d}: "
               f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
-              f"top50={np.mean(mis_top50_ls):.2f}, "
-              )
-        # print(state.shape)
-        # state=state.reshape(10,125).tolist()
+              f"top20={np.mean(mis_top20_ls):.2f}, "
+              f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
 
-        # state=state.tolist()
-        # graph_no,num_repeat,num_spin
-        # state=state.reshape(10,50,125)
-        # for i in range()
+        result["set_size"][ep] = np.mean(mis_ls)
+        result["logr_scaled"][ep] = np.mean(logr_ls)
+        result["train_step"][ep] = train_step
+        result["train_data_used"][ep] = train_data_used
+        print(result)
+        pickle.dump(result, gzip.open("./result.json", 'wb'))
 
-        
+    for ep in range(cfg.epochs):
+        for batch_idx, gbatch in enumerate(train_loader):
+            reward_exp = None
+            process_ratio = max(0., min(1., train_data_used / cfg.annend))
+            logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
 
-        result["cut"] = mis_top50_ls
-        # for i in range(10):
-        #     result['state'].append(state[i])
+            train_logr_scaled_ls = train_logr_scaled_ls[-5000:]
+            train_metric_ls = train_metric_ls[-5000:]
+            gbatch = gbatch.to(device)
+            if cfg.same_graph_across_batch:
+                gbatch = dgl.batch([gbatch] * cfg.batch_size_interact)
+            train_data_used += gbatch.batch_size
 
-        # for j,best_run in enumerate(best_runs):
-        #     result['state'].append(state[j][best_run][:].tolist())
-        # print(result)
-        result=pd.DataFrame(result)
-        # print(result)
-        data_folder=f'pretrained_agents/{cfg.input}/data'
-        os.makedirs(data_folder,exist_ok=True)
-        result.to_pickle(os.path.join(data_folder,'results'))
+            ###### rollout
+            batch, metric_ls = rollout(gbatch, cfg, alg)
+            buffer.add_batch(batch)
 
-        # pickle.dump(result, gzip.open("./result.json", 'wb'))
+            logr = logr_scaler(batch[-2][:, -1])
+            train_logr_scaled_ls += logr.tolist()
+            train_logr_scaled = logr.mean().item()
+            train_metric_ls += metric_ls
+            train_traj_len = batch[-1].float().mean().item()
 
-    
-    evaluate()
+            ##### train
+            batch_size = min(len(buffer), cfg.batch_size)
+            indices = list(range(len(buffer)))
+            for _ in range(cfg.tstep):
+                if len(indices) == 0:
+                    break
+                curr_indices = random.sample(indices, min(len(indices), batch_size))
+                batch = buffer.sample_from_indices(curr_indices)
+                train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
+                indices = [i for i in indices if i not in curr_indices]
+
+            if cfg.onpolicy:
+                buffer.reset()
+
+            if train_step % cfg.print_freq == 0:
+                print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
+                      + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
+                      + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
+                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
+
+            train_step += 1
+
+            ##### eval
+            if batch_idx == 0 or train_step % cfg.eval_freq == 0:
+                # alg.save(alg_save_path)
+                metric_curr = np.mean(train_metric_ls[-1000:])
+                if metric_curr > metric_best:
+                    metric_best = metric_curr
+                    print(f"best metric: {metric_best:.2f} at step {train_data_used:.3e}")
+                    alg.save(alg_save_path_best)
+                if cfg.eval:
+                    evaluate(ep, train_step, train_data_used, logr_scaler)
+
+    evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     # alg.save(alg_save_path)
 
 
 if __name__ == "__main__":
+    # Create a simple graph
     num_nodes = 5
     src = torch.tensor([0, 1, 1, 2, 3])
     dst = torch.tensor([1, 2, 3, 4, 0])
@@ -273,4 +275,5 @@ if __name__ == "__main__":
     # Send the graph to a device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     graph = graph.to(device)
+    
     main()
