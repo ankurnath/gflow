@@ -3,10 +3,11 @@ defaults:
 
 task: mcut
 # input: dense_MC_100_200vertices_unweighted
+input: HomleKim_200vertices_unweighted
 # input: ER_200
 # input: BA_200
 # input: rnd_graph_800vertices_weighted
-input: planar_800vertices_weighted
+# input: planar_800vertices_weighted
 # input: toroidal_grid_2D_800vertices_weighted
 # input: Physics
 # input: SK_spin_70_100vertices_weighted

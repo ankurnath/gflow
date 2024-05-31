@@ -46,43 +46,43 @@ def get_logr_scaler(cfg, process_ratio=1., reward_exp=None):
     return logr_scaler
 
 def refine_cfg(cfg):
-    with open_dict(cfg):
-        cfg.device = cfg.d
-        cfg.work_directory = os.getcwd()
+    # with open_dict(cfg):
+    cfg.device = cfg.d
+    cfg.work_directory = os.getcwd()
 
-        if cfg.task in ["mis", "maxindset", "maxindependentset",]:
-            cfg.task = "MaxIndependentSet"
-            cfg.wandb_project_name = "MIS"
-        elif cfg.task in ["mds", "mindomset", "mindominateset",]:
-            cfg.task = "MinDominateSet"
-            cfg.wandb_project_name = "MDS"
-        elif cfg.task in ["mc", "maxclique",]:
-            cfg.task = "MaxClique"
-            cfg.wandb_project_name = "MaxClique"
-        elif cfg.task in ["mcut", "maxcut",]:
-            cfg.task = "MaxCut"
-            cfg.wandb_project_name = "MaxCut"
-        else:
-            raise NotImplementedError
+    if cfg.task in ["mis", "maxindset", "maxindependentset",]:
+        cfg.task = "MaxIndependentSet"
+        cfg.wandb_project_name = "MIS"
+    elif cfg.task in ["mds", "mindomset", "mindominateset",]:
+        cfg.task = "MinDominateSet"
+        cfg.wandb_project_name = "MDS"
+    elif cfg.task in ["mc", "maxclique",]:
+        cfg.task = "MaxClique"
+        cfg.wandb_project_name = "MaxClique"
+    elif cfg.task in ["mcut", "maxcut",]:
+        cfg.task = "MaxCut"
+        cfg.wandb_project_name = "MaxCut"
+    else:
+        raise NotImplementedError
 
-        # architecture
-        assert cfg.arch in ["gin"]
+    # architecture
+    assert cfg.arch in ["gin"]
 
-        # log reward shape
-        cfg.reward_exp = cfg.rexp
-        cfg.reward_exp_init = cfg.rexpit
-        if cfg.anneal in ["lin"]:
-            cfg.anneal = "linear"
+    # log reward shape
+    cfg.reward_exp = cfg.rexp
+    cfg.reward_exp_init = cfg.rexpit
+    if cfg.anneal in ["lin"]:
+        cfg.anneal = "linear"
 
-        # training
-        cfg.batch_size = cfg.bs
-        cfg.batch_size_interact = cfg.bsit
-        cfg.leaf_coef = cfg.lc
-        cfg.same_graph_across_batch = cfg.sameg
+    # training
+    cfg.batch_size = cfg.bs
+    cfg.batch_size_interact = cfg.bsit
+    cfg.leaf_coef = cfg.lc
+    cfg.same_graph_across_batch = cfg.sameg
 
-        # data
-        cfg.test_batch_size = cfg.tbs
-        cfg.data_type = cfg.input.upper()
+    # data
+    cfg.test_batch_size = cfg.tbs
+    cfg.data_type = cfg.input.upper()
         # if "rb" in cfg.input:
         #     cfg.data_type = cfg.input.upper()
         # elif "ba" in cfg.input:
@@ -140,7 +140,7 @@ def rollout(gbatch, cfg, alg):
 
 
 # @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
-@hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
+# @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
 def main(cfg: DictConfig):
     cfg = refine_cfg(cfg)
     # overwrite
@@ -265,6 +265,81 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser = argparse.ArgumentParser(description='Argument parser for mcut task')
+
+    # Task
+    parser.add_argument('--task', type=str, default='mcut', help='Task name')
+
+    # Inputs
+    parser.add_argument('--distribution', type=str,required=True, help='Input graph')
+
+    # WandB settings
+    parser.add_argument('--wandb', type=int, default=0, help='Use Weights & Biases')
+    
+    # Device settings
+    parser.add_argument('--d', type=int, default=0, help='Device to use: -1 for CPU')
+    
+    # Random seed
+    parser.add_argument('--seed', type=int, default=0, help='Random seed')
+    
+    # Printing and evaluation frequency
+    parser.add_argument('--print_freq', type=int, default=3, help='Frequency of printing status')
+    parser.add_argument('--wandb_freq', type=int, default=None, help='Frequency of logging to Weights & Biases')
+    parser.add_argument('--eval', type=bool, default=False, help='Evaluation mode')
+    parser.add_argument('--eval_freq', type=int, default=200, help='Frequency of evaluation')
+
+    # GIN architecture
+    parser.add_argument('--arch', type=str, default='gin', help='Architecture type')
+    parser.add_argument('--hidden_dim', type=int, default=256, help='Dimension of hidden layers')
+    parser.add_argument('--hidden_layer', type=int, default=5, help='Number of hidden layers')
+    parser.add_argument('--dropout', type=float, default=0., help='Dropout rate')
+    parser.add_argument('--aggr', type=str, default='sum', help='Aggregation method')
+    parser.add_argument('--learn_eps', type=bool, default=True, help='Learn epsilon parameter')
+
+    # GFlowNet algorithm parameters
+    parser.add_argument('--alg', type=str, default='fl', help='Algorithm type')
+    parser.add_argument('--onpolicy', type=bool, default=True, help='Use on-policy training')
+    parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
+    parser.add_argument('--trainsize', type=int, default=4000, help='Training size')
+    parser.add_argument('--testsize', type=int, default=500, help='Test size')
+    parser.add_argument('--tstep', type=int, default=30, help='Number of time steps')
+    parser.add_argument('--bsit', type=int, default=8, help='Batch size for iterations')
+    parser.add_argument('--bs', type=int, default=64, help='Batch size')
+    parser.add_argument('--tbs', type=int, default=30, help='Batch size for training')
+    parser.add_argument('--shuffle', type=bool, default=True, help='Shuffle training data')
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for data loading')
+    parser.add_argument('--sameg', type=bool, default=False, help='Use same graph across one batch')
+    parser.add_argument('--tranbuff_size', type=int, default=1000000, help='Transition buffer size')
+
+    # Learning rates
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--zlr', type=float, default=1e-3, help='Z-learning rate')
+
+    # Random probability
+    parser.add_argument('--randp', type=float, default=0., help='Random probability')
+    
+    # Leaf coefficient
+    parser.add_argument('--lc', type=int, default=1, help='Leaf coefficient')
+
+    # Reward shaping
+    parser.add_argument('--anneal', type=str, default='linear', help='Annealing strategy')
+    parser.add_argument('--annend', type=int, default=40000, help='End of annealing period')
+    parser.add_argument('--rexp', type=float, default=5e2, help='Reward exponent')
+    parser.add_argument('--rexpit', type=int, default=1, help='Reward exponent iteration')
+
+    # Back trajectory
+    parser.add_argument('--back_trajectory', type=bool, default=False, help='Use back trajectory')
+
+    cfg = parser.parse_args()
+    cfg= vars(cfg)
+    cfg['input']=cfg['distribution']
+    cfg.pop('distribution')
+    cfg=OmegaConf.create(cfg)
+    
+
     # Create a simple graph
     num_nodes = 5
     src = torch.tensor([0, 1, 1, 2, 3])
@@ -275,4 +350,4 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     graph = graph.to(device)
     
-    main()
+    main(cfg)
